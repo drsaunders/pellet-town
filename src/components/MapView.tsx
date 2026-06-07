@@ -56,7 +56,6 @@ export function MapView({
     })
 
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right')
-    map.addControl(new maplibregl.GeolocateControl({ trackUserLocation: false }), 'top-right')
 
     map.on('load', () => {
       map.addSource('isochrone', {
