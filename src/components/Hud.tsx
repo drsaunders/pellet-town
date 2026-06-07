@@ -3,11 +3,12 @@ import type { LevelStats } from '../types'
 interface HudProps {
   stats: LevelStats
   tracking: boolean
+  debugMode: boolean
   onToggleTracking: () => void
   onOpenMenu: () => void
 }
 
-export function Hud({ stats, tracking, onToggleTracking, onOpenMenu }: HudProps) {
+export function Hud({ stats, tracking, debugMode, onToggleTracking, onOpenMenu }: HudProps) {
   return (
     <>
       <div className="hud-top">
@@ -28,7 +29,13 @@ export function Hud({ stats, tracking, onToggleTracking, onOpenMenu }: HudProps)
 
       <div className="hud-bottom">
         {!tracking && (
-          <p className="banner">Keep the app open while riding to collect pellets.</p>
+          <p className="banner">Tap Start riding and keep the app open to collect pellets.</p>
+        )}
+        {tracking && debugMode && (
+          <p className="banner debug">Debug: tap the map to move and collect pellets.</p>
+        )}
+        {tracking && !debugMode && (
+          <p className="banner awake">Screen stays awake while tracking.</p>
         )}
         <button className={`track-button ${tracking ? 'active' : ''}`} onClick={onToggleTracking}>
           {tracking ? 'Stop tracking' : 'Start riding'}

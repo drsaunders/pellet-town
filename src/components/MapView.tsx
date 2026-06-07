@@ -14,13 +14,35 @@ interface MapViewProps {
   home: Home
   pellets: Pellet[]
   userLocation?: { lat: number; lon: number; accuracy?: number }
+  debugMode?: boolean
+  debugPlacementActive?: boolean
+  onDebugPlace?: (position: { lat: number; lon: number }) => void
 }
 
-export function MapView({ isochrone, home, pellets, userLocation }: MapViewProps) {
+export function MapView({
+  isochrone,
+  home,
+  pellets,
+  userLocation,
+  debugMode = false,
+  debugPlacementActive = false,
+  onDebugPlace,
+}: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<Map | null>(null)
   const userMarkerRef = useRef<maplibregl.Marker | null>(null)
+  const pelletsRef = useRef(pellets)
+  pelletsRef.current = pellets
   const accuracySourceId = 'user-accuracy'
+
+  const syncPelletsLayer = (map: Map) => {
+    const source = map.getSource('pellets') as GeoJSONSource | undefined
+    if (!source) return
+    source.setData({
+      type: 'FeatureCollection',
+      features: uneatenPelletsToGeoJSON(pelletsRef.current),
+    })
+  }
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -71,7 +93,7 @@ export function MapView({ isochrone, home, pellets, userLocation }: MapViewProps
         type: 'geojson',
         data: {
           type: 'FeatureCollection',
-          features: uneatenPelletsToGeoJSON(pellets),
+          features: uneatenPelletsToGeoJSON(pelletsRef.current),
         },
       })
 
@@ -123,6 +145,8 @@ export function MapView({ isochrone, home, pellets, userLocation }: MapViewProps
           'fill-opacity': 0.15,
         },
       })
+
+      syncPelletsLayer(map)
     })
 
     mapRef.current = map
@@ -136,14 +160,32 @@ export function MapView({ isochrone, home, pellets, userLocation }: MapViewProps
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !map.isStyleLoaded()) return
-
-    const source = map.getSource('pellets') as GeoJSONSource | undefined
-    source?.setData({
-      type: 'FeatureCollection',
-      features: uneatenPelletsToGeoJSON(pellets),
-    })
+    if (!map) return
+    syncPelletsLayer(map)
   }, [pellets])
+
+  const onDebugPlaceRef = useRef(onDebugPlace)
+  onDebugPlaceRef.current = onDebugPlace
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !debugMode || !debugPlacementActive) {
+      map?.getCanvas().classList.remove('map-debug-placement')
+      return
+    }
+
+    map.getCanvas().classList.add('map-debug-placement')
+
+    const handler = (event: maplibregl.MapMouseEvent) => {
+      onDebugPlaceRef.current?.({ lat: event.lngLat.lat, lon: event.lngLat.lng })
+    }
+
+    map.on('click', handler)
+    return () => {
+      map.off('click', handler)
+      map.getCanvas().classList.remove('map-debug-placement')
+    }
+  }, [debugMode, debugPlacementActive])
 
   useEffect(() => {
     const map = mapRef.current
@@ -157,29 +199,39 @@ export function MapView({ isochrone, home, pellets, userLocation }: MapViewProps
       return
     }
 
+    const markerClass = debugMode ? 'user-marker user-marker-debug' : 'user-marker'
+
     if (!userMarkerRef.current) {
       const el = document.createElement('div')
-      el.className = 'user-marker'
+      el.className = markerClass
       userMarkerRef.current = new maplibregl.Marker({ element: el })
         .setLngLat([userLocation.lon, userLocation.lat])
         .addTo(map)
     } else {
+      userMarkerRef.current.getElement().className = markerClass
       userMarkerRef.current.setLngLat([userLocation.lon, userLocation.lat])
     }
 
-    if (userLocation.accuracy && map.getSource(accuracySourceId)) {
-      const source = map.getSource(accuracySourceId) as GeoJSONSource
-      source.setData({
-        type: 'FeatureCollection',
-        features: [
-          circle(point([userLocation.lon, userLocation.lat]), userLocation.accuracy, {
-            units: 'meters',
-            steps: 64,
-          }),
-        ],
-      })
-    }
-  }, [userLocation])
+    const source = map.getSource(accuracySourceId) as GeoJSONSource | undefined
+    if (!source) return
 
-  return <div ref={containerRef} className="map-view" />
+    if (debugMode || !userLocation.accuracy) {
+      source.setData({ type: 'FeatureCollection', features: [] })
+      return
+    }
+
+    source.setData({
+      type: 'FeatureCollection',
+      features: [
+        circle(point([userLocation.lon, userLocation.lat]), userLocation.accuracy, {
+          units: 'meters',
+          steps: 64,
+        }),
+      ],
+    })
+  }, [userLocation, debugMode])
+
+  const mapClass = debugMode && debugPlacementActive ? 'map-view map-debug-active' : 'map-view'
+
+  return <div ref={containerRef} className={mapClass} />
 }

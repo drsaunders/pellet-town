@@ -15,9 +15,10 @@ export class PelletEater {
     lat: number,
     lon: number,
     radiusMeters = CAPTURE_RADIUS_METERS,
+    options?: { skipThrottle?: boolean },
   ): Promise<Pellet[]> {
     const now = Date.now()
-    if (now - this.lastProcessedAt < 1000) return []
+    if (!options?.skipThrottle && now - this.lastProcessedAt < 1000) return []
     this.lastProcessedAt = now
 
     const inRange = this.index.findAllWithin(lon, lat, radiusMeters)

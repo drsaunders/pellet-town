@@ -200,7 +200,19 @@ textarea {
 .icon-button,
 .track-button,
 .banner {
+  margin: 0;
+  padding: 0.65rem 1rem;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.82);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: #cbd5e1;
+  font-size: 0.9rem;
   pointer-events: auto;
+}
+
+.banner.awake {
+  border-color: rgba(45, 212, 191, 0.45);
+  color: #99f6e4;
 }
 
 .stat-card {
@@ -250,14 +262,6 @@ textarea {
   color: #ecfeff;
 }
 
-.banner {
-  margin: 0;
-  padding: 0.65rem 1rem;
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.82);
-  color: #cbd5e1;
-  font-size: 0.9rem;
-}
 
 .menu-overlay {
   position: absolute;
@@ -281,6 +285,40 @@ textarea {
   background: #60a5fa;
   border: 3px solid #fff;
   box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.35);
+}
+
+.user-marker-debug {
+  background: #a855f7;
+  box-shadow: 0 0 0 4px rgba(168, 85, 247, 0.45);
+}
+
+.map-view.map-debug-active,
+.map-debug-placement {
+  cursor: crosshair;
+}
+
+.banner.debug {
+  border-color: rgba(168, 85, 247, 0.55);
+  color: #e9d5ff;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.8);
+  color: #e2e8f0;
+  font-size: 0.95rem;
+}
+
+.toggle-row input {
+  width: auto;
+  accent-color: #a855f7;
 }
 
 .toast {

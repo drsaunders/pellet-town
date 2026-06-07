@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { playPelletDing, primePelletAudio } from './audio/pellet-ding'
 import { MapView } from './components/MapView'
 import { Hud } from './components/Hud'
 import { MenuPanel } from './components/MenuPanel'
 import { SetupWizard } from './components/SetupWizard'
 import { computeLevelStats, db, getActiveLevelId } from './db'
 import { PelletEater } from './gps/eat-logic'
+import { applyUserPosition } from './gps/position'
 import { GpsTracker } from './gps/tracker'
+import { ScreenWakeLock } from './gps/wake-lock'
 import type { Level, LevelStats, Pellet } from './types'
 
 export default function App() {
@@ -14,6 +17,7 @@ export default function App() {
   const [pellets, setPellets] = useState<Pellet[]>([])
   const [stats, setStats] = useState<LevelStats | null>(null)
   const [tracking, setTracking] = useState(false)
+  const [debugMode, setDebugMode] = useState(false)
   const [userLocation, setUserLocation] = useState<
     { lat: number; lon: number; accuracy?: number } | undefined
   >()
@@ -22,6 +26,27 @@ export default function App() {
 
   const eaterRef = useRef(new PelletEater())
   const trackerRef = useRef(new GpsTracker())
+  const wakeLockRef = useRef(new ScreenWakeLock())
+  const trackingRef = useRef(false)
+  const debugModeRef = useRef(false)
+
+  useEffect(() => {
+    trackingRef.current = tracking
+  }, [tracking])
+
+  useEffect(() => {
+    debugModeRef.current = debugMode
+  }, [debugMode])
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && trackingRef.current && !debugModeRef.current) {
+        void wakeLockRef.current.acquire()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+  }, [])
 
   const refreshStats = useCallback(async (levelId: string) => {
     const next = await computeLevelStats(levelId)
@@ -53,7 +78,10 @@ export default function App() {
   }, [loadLevel])
 
   useEffect(() => {
-    return () => trackerRef.current.stop()
+    return () => {
+      trackerRef.current.stop()
+      void wakeLockRef.current.release()
+    }
   }, [])
 
   const handlePelletsEaten = useCallback(
@@ -68,6 +96,8 @@ export default function App() {
         }),
       )
 
+      playPelletDing(eaten.length)
+
       if (level) {
         await refreshStats(level.id)
         const message =
@@ -79,31 +109,81 @@ export default function App() {
     [level, refreshStats],
   )
 
+  const processPosition = useCallback(
+    async (position: { lat: number; lon: number; accuracy?: number }) => {
+      setUserLocation(position)
+      const eaten = await applyUserPosition(eaterRef.current, position, {
+        skipThrottle: debugModeRef.current,
+      })
+      if (eaten.length > 0) {
+        await handlePelletsEaten(eaten)
+      }
+    },
+    [handlePelletsEaten],
+  )
+
+  const stopGpsTracking = useCallback(() => {
+    trackerRef.current.stop()
+    void wakeLockRef.current.release()
+  }, [])
+
+  const startGpsTracking = useCallback(() => {
+    primePelletAudio()
+    trackerRef.current.start(async (position) => {
+      await processPosition({
+        lat: position.lat,
+        lon: position.lon,
+        accuracy: position.accuracy,
+      })
+    })
+    void wakeLockRef.current.request()
+  }, [processPosition])
+
   const toggleTracking = useCallback(() => {
     if (tracking) {
-      trackerRef.current.stop()
+      stopGpsTracking()
       setTracking(false)
       return
     }
 
     try {
-      trackerRef.current.start(async (position) => {
-        setUserLocation({
-          lat: position.lat,
-          lon: position.lon,
-          accuracy: position.accuracy,
-        })
+      if (debugMode) {
+        primePelletAudio()
+        setTracking(true)
+        return
+      }
 
-        const eaten = await eaterRef.current.tryEatAllWithin(position.lat, position.lon)
-        if (eaten.length > 0) {
-          await handlePelletsEaten(eaten)
-        }
-      })
+      startGpsTracking()
       setTracking(true)
     } catch (error) {
       setToast(error instanceof Error ? error.message : 'Could not start GPS')
     }
-  }, [handlePelletsEaten, tracking])
+  }, [debugMode, startGpsTracking, stopGpsTracking, tracking])
+
+  const handleDebugPlace = useCallback(
+    async (position: { lat: number; lon: number }) => {
+      if (!debugMode || !tracking) return
+      await processPosition(position)
+    },
+    [debugMode, processPosition, tracking],
+  )
+
+  const toggleDebugMode = useCallback(() => {
+    setDebugMode((current) => {
+      const next = !current
+      if (next && tracking) {
+        stopGpsTracking()
+      } else if (!next && tracking) {
+        try {
+          startGpsTracking()
+        } catch (error) {
+          setToast(error instanceof Error ? error.message : 'Could not start GPS')
+          setTracking(false)
+        }
+      }
+      return next
+    })
+  }, [startGpsTracking, stopGpsTracking, tracking])
 
   const handleReset = useCallback(async () => {
     if (!level) return
@@ -117,13 +197,15 @@ export default function App() {
       await db.meta.put({ id: 'app', activeLevelId: undefined })
     })
 
-    trackerRef.current.stop()
+    stopGpsTracking()
     setTracking(false)
+    setDebugMode(false)
+    setUserLocation(undefined)
     setLevel(null)
     setPellets([])
     setStats(null)
     setMenuOpen(false)
-  }, [level])
+  }, [level, stopGpsTracking])
 
   const ready = useMemo(() => !loading && level && stats, [loading, level, stats])
 
@@ -154,16 +236,22 @@ export default function App() {
         home={level.home}
         pellets={pellets}
         userLocation={userLocation}
+        debugMode={debugMode}
+        debugPlacementActive={debugMode && tracking}
+        onDebugPlace={handleDebugPlace}
       />
       <Hud
         stats={stats}
         tracking={tracking}
+        debugMode={debugMode}
         onToggleTracking={toggleTracking}
         onOpenMenu={() => setMenuOpen(true)}
       />
       {menuOpen && (
         <MenuPanel
           level={level}
+          debugMode={debugMode}
+          onToggleDebugMode={toggleDebugMode}
           onClose={() => setMenuOpen(false)}
           onReset={handleReset}
         />
