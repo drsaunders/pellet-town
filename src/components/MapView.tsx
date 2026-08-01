@@ -9,14 +9,79 @@ import { isochroneBounds } from '../geo/isochrone'
 import { uneatenPelletsToGeoJSON } from '../geo/pellets'
 import type { Home, Pellet } from '../types'
 
+interface UserLocation {
+  lat: number
+  lon: number
+  accuracy?: number
+}
+
 interface MapViewProps {
   isochrone: MultiPolygon
   home: Home
   pellets: Pellet[]
-  userLocation?: { lat: number; lon: number; accuracy?: number }
+  userLocation?: UserLocation
   debugMode?: boolean
   debugPlacementActive?: boolean
   onDebugPlace?: (position: { lat: number; lon: number }) => void
+}
+
+/** Centers on our tracked location — does not call GPS itself (avoids a second blue dot). */
+class RecenterControl implements maplibregl.IControl {
+  private container: HTMLDivElement | null = null
+  private button: HTMLButtonElement | null = null
+  private map: Map | null = null
+  private getLocation: () => UserLocation | undefined
+
+  constructor(getLocation: () => UserLocation | undefined) {
+    this.getLocation = getLocation
+  }
+
+  onAdd(map: Map): HTMLElement {
+    this.map = map
+    this.container = document.createElement('div')
+    this.container.className = 'maplibregl-ctrl maplibregl-ctrl-group'
+
+    this.button = document.createElement('button')
+    this.button.type = 'button'
+    this.button.className = 'maplibregl-ctrl-recenter'
+    this.button.title = 'Center on my location'
+    this.button.setAttribute('aria-label', 'Center on my location')
+    this.button.innerHTML =
+      '<span class="maplibregl-ctrl-icon maplibregl-ctrl-recenter-icon" aria-hidden="true"></span>'
+    this.button.addEventListener('click', this.handleClick)
+
+    this.container.appendChild(this.button)
+    this.syncEnabled()
+    return this.container
+  }
+
+  onRemove(): void {
+    this.button?.removeEventListener('click', this.handleClick)
+    this.container?.parentNode?.removeChild(this.container)
+    this.container = null
+    this.button = null
+    this.map = null
+  }
+
+  syncEnabled(): void {
+    if (!this.button) return
+    const hasLocation = Boolean(this.getLocation())
+    this.button.disabled = !hasLocation
+    this.button.title = hasLocation
+      ? 'Center on my location'
+      : 'Start riding to show your location'
+  }
+
+  private handleClick = (): void => {
+    const location = this.getLocation()
+    if (!location || !this.map) return
+
+    this.map.easeTo({
+      center: [location.lon, location.lat],
+      zoom: Math.max(this.map.getZoom(), 16),
+      duration: 600,
+    })
+  }
 }
 
 export function MapView({
@@ -31,8 +96,11 @@ export function MapView({
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<Map | null>(null)
   const userMarkerRef = useRef<maplibregl.Marker | null>(null)
+  const recenterControlRef = useRef<RecenterControl | null>(null)
   const pelletsRef = useRef(pellets)
   pelletsRef.current = pellets
+  const userLocationRef = useRef(userLocation)
+  userLocationRef.current = userLocation
   const accuracySourceId = 'user-accuracy'
 
   const syncPelletsLayer = (map: Map) => {
@@ -56,6 +124,10 @@ export function MapView({
     })
 
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right')
+
+    const recenter = new RecenterControl(() => userLocationRef.current)
+    recenterControlRef.current = recenter
+    map.addControl(recenter, 'top-right')
 
     map.on('load', () => {
       map.addSource('isochrone', {
@@ -154,6 +226,7 @@ export function MapView({
       userMarkerRef.current?.remove()
       map.remove()
       mapRef.current = null
+      recenterControlRef.current = null
     }
   }, [home.lat, home.lon, home.label, isochrone])
 
@@ -162,6 +235,10 @@ export function MapView({
     if (!map) return
     syncPelletsLayer(map)
   }, [pellets])
+
+  useEffect(() => {
+    recenterControlRef.current?.syncEnabled()
+  }, [userLocation])
 
   const onDebugPlaceRef = useRef(onDebugPlace)
   onDebugPlaceRef.current = onDebugPlace
