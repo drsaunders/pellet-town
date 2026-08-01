@@ -45,6 +45,7 @@ export interface LevelStats {
   levelId: string
   totalPellets: number
   eatenPellets: number
+  eatenToday: number
   percentComplete: number
   lastActivityAt?: string
 }

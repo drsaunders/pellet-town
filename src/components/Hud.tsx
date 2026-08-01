@@ -21,6 +21,9 @@ export function Hud({ stats, tracking, debugMode, onToggleTracking, onOpenMenu }
           <span className="stat-value">
             {stats.eatenPellets.toLocaleString()} / {stats.totalPellets.toLocaleString()}
           </span>
+          <span className="stat-sub">
+            {stats.eatenToday.toLocaleString()} today
+          </span>
         </div>
         <button className="icon-button" onClick={onOpenMenu} aria-label="Menu">
           ☰

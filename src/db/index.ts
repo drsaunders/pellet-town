@@ -34,16 +34,27 @@ export async function setActiveLevelId(levelId: string): Promise<void> {
 export async function computeLevelStats(levelId: string) {
   const all = await db.pellets.where('levelId').equals(levelId).toArray()
   const totalPellets = all.length
-  const eatenPellets = all.filter((p) => p.eaten).length
+  const eaten = all.filter((p) => p.eaten)
+  const eatenPellets = eaten.length
   const percentComplete = totalPellets === 0 ? 0 : (eatenPellets / totalPellets) * 100
-  const eatenSorted = all
-    .filter((p) => p.eaten && p.eatenAt)
+
+  const startOfToday = new Date()
+  startOfToday.setHours(0, 0, 0, 0)
+  const startOfTodayIso = startOfToday.toISOString()
+
+  const eatenToday = eaten.filter(
+    (p) => p.eatenAt !== undefined && p.eatenAt >= startOfTodayIso,
+  ).length
+
+  const eatenSorted = eaten
+    .filter((p) => p.eatenAt)
     .sort((a, b) => (a.eatenAt ?? '').localeCompare(b.eatenAt ?? ''))
 
   return {
     levelId,
     totalPellets,
     eatenPellets,
+    eatenToday,
     percentComplete,
     lastActivityAt: eatenSorted.at(-1)?.eatenAt,
   }
